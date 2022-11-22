@@ -1,0 +1,106 @@
+import { useActiveWeb3React, useSushiContract } from '../../hooks'
+
+import { BigNumber } from '@ethersproject/bignumber'
+import { Chef } from './enum'
+import { Zero } from '@ethersproject/constants'
+import { parseUnits } from '@ethersproject/units'
+import { useCallback } from 'react'
+import { useChefContract } from './hooks'
+
+export default function useMasterChef(chef: Chef) {
+    const { account } = useActiveWeb3React()
+
+    const sushi = useSushiContract()
+
+    const contract = useChefContract(chef)
+
+    // Deposit
+    const deposit = useCallback(
+        async (pid: number, amount: BigNumber) => {
+            try {
+                let tx
+
+                if (chef === Chef.MASTERCHEF) {
+                    tx = await contract?.deposit(pid, amount)
+                } else {
+                    tx = await contract?.deposit(pid, amount, account)
+                }
+
+                return tx
+            } catch (e) {
+                console.error(e)
+                return e
+            }
+        },
+        [account, contract]
+    )
+
+    // Withdraw
+    const withdraw = useCallback(
+        async (pid: number, amount: BigNumber) => {
+            // console.log('withdraw', {
+            //     pid,
+            //     amount,
+            // })
+            try {
+                let tx
+
+                if (chef === Chef.MASTERCHEF) {
+                    tx = await contract?.withdraw(pid, amount)
+                } else {
+                    tx = await contract?.withdraw(pid, amount, account)
+                }
+
+                return tx
+            } catch (e) {
+                console.error(e)
+                return e
+            }
+        },
+        [account, contract]
+    )
+
+    const harvest = useCallback(
+        async (pid: number) => {
+            try {
+                console.log('harvest', { contract, account, pid })
+
+                const pendingSushi = await contract?.pendingSushi(pid, account)
+
+                const balanceOf = await sushi?.balanceOf(contract?.address)
+
+                let tx
+
+                if (chef === Chef.MASTERCHEF) {
+                    tx = await contract?.deposit(pid, Zero)
+                } else if (
+                    chef === Chef.MASTERCHEF_V2 &&
+                    pendingSushi.gt(balanceOf)
+                ) {
+                    tx = await contract?.batch(
+                        [
+                            contract?.interface?.encodeFunctionData(
+                                'harvestFromMasterChef'
+                            ),
+                            contract?.interface?.encodeFunctionData('harvest', [
+                                pid,
+                                account,
+                            ]),
+                        ],
+                        true
+                    )
+                } else if (chef === Chef.MINICHEF) {
+                    tx = await contract?.harvest(pid, account)
+                }
+
+                return tx
+            } catch (e) {
+                console.error(e)
+                return e
+            }
+        },
+        [account, contract, sushi]
+    )
+
+    return { deposit, withdraw, harvest }
+}
